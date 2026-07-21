@@ -1,0 +1,4 @@
+# Reproducible installation entrypoint. Runtime and test dependencies are
+# declared in pyproject.toml so editable and wheel installs stay consistent.
+-e .[test]
+

@@ -1,0 +1,61 @@
+workspace_root: /net/projects2/litian-lab/scpan
+output_root: /net/projects2/litian-lab/scpan/encoders/artifacts
+manifests:
+  adni: /net/projects2/litian-lab/scpan/encoders/data/manifests/adni.csv
+  scz: /net/projects2/litian-lab/scpan/encoders/data/manifests/scz.csv
+checkpoints:
+  medsiglip: /net/projects2/litian-lab/scpan/model_weights/medsiglip
+  medgemma: /net/projects2/litian-lab/scpan/model_weights/medgemma
+  braingemma3d: /net/projects2/litian-lab/scpan/model_weights/braingemma3D
+  mass: /net/projects2/litian-lab/scpan/model_weights/MASS/mass_base.pth
+  brainiac: /net/projects2/litian-lab/scpan/model_weights/brainIAC/BrainIAC.ckpt
+source_repositories:
+  braingemma3d: /net/projects2/litian-lab/scpan/BrainGemma3D
+  mass: /net/projects2/litian-lab/scpan/MASS
+  brainiac: /net/projects2/litian-lab/scpan/BrainIAC
+data:
+  split_seed: 0
+  test_fraction: 0.5
+  validation_fraction: 0.15
+  axis: 2
+  num_slices: 24
+  slice_range: [0.15, 0.85]
+  roi_fraction: 1.0
+  low_percentile: 1.0
+  high_percentile: 99.0
+  volume_shapes:
+    braingemma3d: [64, 128, 128]
+    mass: [128, 128, 128]
+    brainiac: [96, 96, 96]
+features:
+  pooled_grid: [4, 4, 4]
+  cache_dtype: float16
+probe:
+  seeds: [0, 1, 2]
+  learning_rate: 0.001
+  weight_decays: [0.0, 0.001, 0.01, 0.1, 1.0]
+  max_epochs: 300
+  batch_size: 32
+  hidden_size: 128
+bridge:
+  seeds: [0, 1, 2]
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  micro_batch_size: 1
+  gradient_accumulation: 16
+  max_epochs: 50
+  warmup_fraction: 0.05
+  gradient_clip: 1.0
+  patience: 7
+  precision: bf16
+  rank: 512
+  llm_hidden_size: 2560
+  query_count: 64
+  resampler_layers: 2
+  attention_heads: 8
+  ffn_size: 2048
+evaluation:
+  bootstrap_samples: 2000
+  bootstrap_seed: 0
+  zero_shot_max_new_tokens: 1024
+
