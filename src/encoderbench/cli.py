@@ -77,12 +77,32 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument("--device", default="auto")
     probe.add_argument("--out-dir", default=None)
 
+    finetune = sub.add_parser("finetune", help="Budgeted end-to-end encoder fine-tuning")
+    finetune.add_argument("disease", choices=DISEASES)
+    finetune.add_argument("encoder", choices=ENCODERS)
+    finetune.add_argument("--manifest", default=None)
+    finetune.add_argument("--cache", default=None,
+                          help="Frozen cache used only for train normalization statistics")
+    finetune.add_argument("--seeds", default="all", help="all or comma-separated subset of 0,1,2")
+    finetune.add_argument("--shuffled-labels", action="store_true")
+    finetune.add_argument("--device", default="cuda")
+    finetune.add_argument("--restart", action="store_true")
+    finetune.add_argument("--out-dir", default=None)
+
     zero = sub.add_parser("zero-shot", help="Run a frozen native VLM with free generation")
     zero.add_argument("disease", choices=DISEASES)
     zero.add_argument("model", choices=("medgemma", "braingemma3d"))
     zero.add_argument("--manifest", default=None)
     zero.add_argument("--device", default="cuda")
     zero.add_argument("--out-dir", default=None)
+    zero.add_argument("--num-shards", type=int, default=None,
+                      help="Independent inference shards (defaults to torchrun WORLD_SIZE)")
+    zero.add_argument("--shard-index", type=int, default=None,
+                      help="Zero-based shard index (defaults to torchrun RANK)")
+    zero.add_argument("--restart", action="store_true",
+                      help="Replace this shard instead of resuming it")
+    zero.add_argument("--merge-only", action="store_true",
+                      help="Merge completed shards without loading a model")
 
     bridge = sub.add_parser("bridge", help="Train formal frozen-LLM bridge seeds")
     bridge.add_argument("disease", choices=DISEASES)
@@ -180,13 +200,40 @@ def _dispatch(args: argparse.Namespace, config: ExperimentConfig) -> Any:
                              raw["evaluation"], args.shuffled_labels, args.device)
                    for seed in _seeds(args.seeds, raw["probe"]["seeds"])]
         return {"runs": results}
+    if args.command == "finetune":
+        from encoderbench.finetune import run_finetune
+
+        _gate(config, args.disease)
+        cache = args.cache or _cache_path(config, args.disease, args.encoder)
+        output = args.out_dir or config.output_root / "finetune" / args.disease / args.encoder
+        results = [run_finetune(
+            args.manifest or config.manifest(args.disease), cache, args.disease, args.encoder,
+            raw, output, seed, args.shuffled_labels, args.device, args.restart,
+        ) for seed in _seeds(args.seeds, raw["finetune"]["seeds"])]
+        return {"runs": results}
     if args.command == "zero-shot":
         from encoderbench.zero_shot import run_zero_shot
 
         _gate(config, args.disease)
         output = args.out_dir or config.output_root / "zero_shot" / args.disease
+        world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        rank = int(os.environ.get("RANK", "0"))
+        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        num_shards = args.num_shards if args.num_shards is not None else world_size
+        if args.shard_index is not None:
+            shard_index = args.shard_index
+        elif world_size > 1:
+            shard_index = rank
+        elif num_shards > 1 and not args.merge_only:
+            raise ValueError("Manual multi-shard runs require --shard-index")
+        else:
+            shard_index = 0
+        device = args.device
+        if device == "cuda" and world_size > 1:
+            device = f"cuda:{local_rank}"
         return run_zero_shot(args.manifest or config.manifest(args.disease), args.disease,
-                             args.model, raw, output, args.device)
+                             args.model, raw, output, device, num_shards, shard_index,
+                             args.restart, args.merge_only)
     if args.command == "bridge":
         from encoderbench.training import run_bridge
 

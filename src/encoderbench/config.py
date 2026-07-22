@@ -53,7 +53,7 @@ def load_config(path: str | Path | None = None) -> ExperimentConfig:
 
 def _validate(raw: dict[str, Any]) -> None:
     for section in ("manifests", "checkpoints", "source_repositories", "data", "features",
-                    "probe", "bridge", "evaluation"):
+                    "probe", "finetune", "bridge", "evaluation"):
         if not isinstance(raw.get(section), dict):
             raise ValueError(f"Missing configuration section: {section}")
     data = raw["data"]
@@ -67,9 +67,21 @@ def _validate(raw: dict[str, Any]) -> None:
         raise ValueError("The common token grid must be [4, 4, 4]")
     if tuple(raw["probe"].get("seeds", ())) != (0, 1, 2):
         raise ValueError("Probe seeds must be [0, 1, 2]")
+    finetune = raw["finetune"]
+    if tuple(finetune.get("seeds", ())) != (0, 1, 2):
+        raise ValueError("Finetune seeds must be [0, 1, 2]")
+    if int(finetune.get("parameter_budget", 0)) <= 0:
+        raise ValueError("Finetune parameter_budget must be positive")
+    if int(finetune.get("gradient_accumulation", 0)) <= 0:
+        raise ValueError("Finetune gradient_accumulation must be positive")
+    if finetune.get("precision") != "bf16":
+        raise ValueError("Finetune precision must be bf16")
     bridge = raw["bridge"]
     if tuple(bridge.get("seeds", ())) != (0, 1, 2):
         raise ValueError("Bridge seeds must be [0, 1, 2]")
     effective_batch = int(bridge["micro_batch_size"]) * int(bridge["gradient_accumulation"])
     if effective_batch != 16:
         raise ValueError(f"Bridge effective batch size must equal 16, got {effective_batch}")
+    max_new_tokens = int(raw["evaluation"].get("zero_shot_max_new_tokens", 0))
+    if not 1 <= max_new_tokens <= 256:
+        raise ValueError("zero_shot_max_new_tokens must be between 1 and 256")

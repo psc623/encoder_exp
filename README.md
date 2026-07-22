@@ -141,6 +141,25 @@ done
 
 The command saves all seed checkpoints, test probabilities, validation selection details, volume/subject estimates, subject-cluster intervals, parameter counts, and token shapes. It never selects a seed for reporting.
 
+### 4.5 Budgeted end-to-end encoder fine-tuning
+
+Each run starts from the registered pretrained checkpoint, processes the original MRI rather than
+the feature cache, and unfreezes complete output-side blocks/stages up to a shared 16M-parameter
+target. The frozen cache is used only to retain the attention probe's train-only normalization.
+
+```bash
+for encoder in medsiglip braingemma3d mass brainiac; do
+  encoderbench finetune ad "$encoder" --seeds all --device cuda
+done
+```
+
+The common protocol uses encoder LR `1e-5`, attention-head LR `1e-3`, BF16, gradient accumulation
+of 8, at most 30 epochs, and validation early stopping with patience 7. Complete blocks are never
+split to hit the target, so the exact trainable count is recorded per encoder. Every seed writes a
+best delta checkpoint, a latest resumable checkpoint, test probabilities, volume/subject metrics,
+subject-cluster confidence intervals, and the selected parameter groups. Rerun the same command to
+resume, or add `--restart` to replace an existing run.
+
 ### 5. Native zero-shot VLMs
 
 ```bash
@@ -148,7 +167,28 @@ encoderbench zero-shot ad medgemma --device cuda
 encoderbench zero-shot ad braingemma3d --device cuda
 ```
 
-Both paths use greedy free generation (`temperature=0`), retain full raw responses, apply the fixed hierarchical parser, and force `UNK`/`ERR` wrong without dropping rows. These results remain separate from supervised results.
+Both paths use greedy BF16/SDPA free generation (`temperature=0`), stop after a complete
+`Final Answer` marker or 128 new tokens, retain full raw responses, apply the fixed hierarchical
+parser, and force `UNK`/`ERR` wrong without dropping rows. Each completed scan is atomically saved;
+rerunning the same command resumes it and displays progress. Use `--restart` when intentionally
+replacing results from an older protocol.
+
+On a four-GPU allocation, launch independent shards with `torchrun`; ranks select their GPU and
+shard automatically, and the last completed rank merges the canonical predictions and summary:
+
+```bash
+torchrun --standalone --nproc-per-node=4 -m encoderbench \
+  zero-shot ad braingemma3d --device cuda --restart
+```
+
+If automatic merging was interrupted, merge without loading the model:
+
+```bash
+encoderbench zero-shot ad braingemma3d --num-shards 4 --merge-only
+```
+
+Manual shard launches use matching `--num-shards 4 --shard-index 0` through
+`--shard-index 3`, with a distinct visible GPU for each process.
 
 ### 6. Bridges
 

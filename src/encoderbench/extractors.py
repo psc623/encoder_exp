@@ -35,8 +35,18 @@ class FrozenExtractor(ABC):
             raise RuntimeError(f"{self.name} has {trainable} trainable encoder parameters")
 
     @abstractmethod
+    def forward_tokens(self, path: str | Path) -> torch.Tensor:
+        """Return a differentiable device tensor shaped `[1,64,D]`."""
+
+    @abstractmethod
+    def finetune_groups(self) -> tuple[list[tuple[str, torch.nn.Module]],
+                                       list[tuple[str, torch.nn.Module]]]:
+        """Return output-to-input primary groups and always-train output modules."""
+
+    @torch.inference_mode()
     def extract(self, path: str | Path) -> torch.Tensor:
-        """Return one CPU tensor shaped `[64,D]`."""
+        """Return one frozen CPU tensor shaped `[64,D]`."""
+        return self.forward_tokens(path).squeeze(0).cpu()
 
     def _pool(self, feature_map: torch.Tensor) -> torch.Tensor:
         if feature_map.ndim != 5:
@@ -58,7 +68,7 @@ class FrozenExtractor(ABC):
         tokens = tokens + positions.unsqueeze(0)
         if not torch.isfinite(tokens).all():
             raise FloatingPointError(f"{self.name} produced NaN or Inf")
-        return tokens.squeeze(0).cpu()
+        return tokens
 
     def audit(self, tokens: torch.Tensor) -> dict[str, Any]:
         return {
@@ -94,8 +104,7 @@ class MedSigLIPExtractor(FrozenExtractor):
                            "missing_keys": [], "unexpected_keys": []}
         self.freeze()
 
-    @torch.inference_mode()
-    def extract(self, path: str | Path) -> torch.Tensor:
+    def forward_tokens(self, path: str | Path) -> torch.Tensor:
         images = volume_to_slices(path, axis=self.data["axis"], count=self.data["num_slices"],
                                   bounds=self.data["slice_range"],
                                   roi_fraction=self.data["roi_fraction"])
@@ -111,6 +120,13 @@ class MedSigLIPExtractor(FrozenExtractor):
         feature_map = tokens.reshape(len(images), self.patch_grid, self.patch_grid, -1)
         feature_map = feature_map.permute(3, 0, 1, 2).unsqueeze(0)
         return self._pool(feature_map)
+
+    def finetune_groups(self):
+        vision = self.model.vision_model
+        layers = list(vision.encoder.layers)
+        primary = [(f"vision.encoder.layers.{index}", layer)
+                   for index, layer in reversed(list(enumerate(layers)))]
+        return primary, [("vision.post_layernorm", vision.post_layernorm)]
 
 
 def _load_module(name: str, source: Path, extra_path: Path | None = None):
@@ -140,8 +156,7 @@ class BrainGemma3DExtractor(FrozenExtractor):
                            "inflation_depth": 2, "missing_keys": [], "unexpected_keys": []}
         self.freeze()
 
-    @torch.inference_mode()
-    def extract(self, path: str | Path) -> torch.Tensor:
+    def forward_tokens(self, path: str | Path) -> torch.Tensor:
         volume = volume_to_tensor(path, self.shape).unsqueeze(0).to(self.device)
         dtype = next(self.model.parameters()).dtype
         patch_module = self.model.vision_model.patch_embedding_3d
@@ -151,6 +166,13 @@ class BrainGemma3DExtractor(FrozenExtractor):
             raise ValueError("BrainGemma3D patch count does not match its inflated 3D grid")
         feature_map = tokens.transpose(1, 2).reshape(tokens.shape[0], tokens.shape[2], *patch_grid)
         return self._pool(feature_map)
+
+    def finetune_groups(self):
+        vision = self.model.vision_model
+        layers = list(vision.encoder.layers)
+        primary = [(f"vision.encoder.layers.{index}", layer)
+                   for index, layer in reversed(list(enumerate(layers)))]
+        return primary, [("vision.post_layernorm", vision.post_layernorm)]
 
 
 class MASSExtractor(FrozenExtractor):
@@ -182,13 +204,18 @@ class MASSExtractor(FrozenExtractor):
                            "missing_keys": list(missing), "unexpected_keys": list(unexpected)}
         self.freeze()
 
-    @torch.inference_mode()
-    def extract(self, path: str | Path) -> torch.Tensor:
+    def forward_tokens(self, path: str | Path) -> torch.Tensor:
         volume = volume_to_tensor(path, self.shape).unsqueeze(0).to(self.device)
         deepest = self.model.encoder(volume)[0]
         if deepest.shape[1] != 512:
             raise ValueError(f"MASS deepest encoder width must be 512, got {deepest.shape[1]}")
         return self._pool(deepest)
+
+    def finetune_groups(self):
+        encoder = self.model.encoder
+        primary = [(f"encoder.{name}", getattr(encoder, name))
+                   for name in ("down4", "down3", "down2", "down1", "inc")]
+        return primary, []
 
 
 class BrainIACExtractor(FrozenExtractor):
@@ -217,8 +244,7 @@ class BrainIACExtractor(FrozenExtractor):
                            "missing_keys": missing, "unexpected_keys": unexpected}
         self.freeze()
 
-    @torch.inference_mode()
-    def extract(self, path: str | Path) -> torch.Tensor:
+    def forward_tokens(self, path: str | Path) -> torch.Tensor:
         volume = volume_to_tensor(path, self.shape).unsqueeze(0).to(self.device)
         output = self.model(volume)
         tokens = output[0] if isinstance(output, tuple) else output
@@ -230,6 +256,11 @@ class BrainIACExtractor(FrozenExtractor):
             raise ValueError(f"BrainIAC expected 216 spatial patch tokens, got {patch_tokens.shape[1]}")
         feature_map = patch_tokens.transpose(1, 2).reshape(tokens.shape[0], 768, 6, 6, 6)
         return self._pool(feature_map)
+
+    def finetune_groups(self):
+        primary = [(f"blocks.{index}", block)
+                   for index, block in reversed(list(enumerate(self.model.blocks)))]
+        return primary, [("norm", self.model.norm)]
 
 
 def build_extractor(name: str, config: dict[str, Any], device: str) -> FrozenExtractor:

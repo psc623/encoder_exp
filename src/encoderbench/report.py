@@ -52,16 +52,17 @@ def generate_report(input_root: str | Path, output_dir: str | Path,
         try:
             with path.open(encoding="utf-8") as handle:
                 value = json.load(handle)
-            if value.get("kind") in ("attention_probe", "zero_shot", "linear_bridge", "resampler_bridge"):
+            if value.get("kind") in ("attention_probe", "encoder_finetune", "zero_shot",
+                                     "linear_bridge", "resampler_bridge"):
                 value["_summary_path"] = str(path)
                 records.append(value)
         except (OSError, json.JSONDecodeError):
             continue
     if not records:
         raise ValueError(f"No run summaries found beneath {root}")
-    report: dict[str, Any] = {"attention_probe": {}, "zero_shot": {},
+    report: dict[str, Any] = {"attention_probe": {}, "encoder_finetune": {}, "zero_shot": {},
                               "linear_bridge": {}, "resampler_bridge": {}}
-    for family in ("attention_probe", "linear_bridge", "resampler_bridge"):
+    for family in ("attention_probe", "encoder_finetune", "linear_bridge", "resampler_bridge"):
         groups: dict[tuple[str, str, bool], list[dict[str, Any]]] = defaultdict(list)
         for item in records:
             if item["kind"] == family:
@@ -83,7 +84,7 @@ def generate_report(input_root: str | Path, output_dir: str | Path,
 
 def _paired(records: list[dict[str, Any]], samples: int, seed: int) -> dict[str, Any]:
     output: dict[str, Any] = {}
-    for family in ("attention_probe", "linear_bridge", "resampler_bridge"):
+    for family in ("attention_probe", "encoder_finetune", "linear_bridge", "resampler_bridge"):
         for disease in ("ad", "scz"):
             subset = [item for item in records if item["kind"] == family and item["disease"] == disease
                       and not item.get("shuffled_labels")]
@@ -111,9 +112,12 @@ def _paired(records: list[dict[str, Any]], samples: int, seed: int) -> dict[str,
 
 def _write_markdown(path: Path, report: dict[str, Any]) -> None:
     lines = ["# Encoder Experiment Report", "",
-             "Attention probes, native zero-shot VLMs, linear bridges, and resampler bridges are "
+             "Attention probes, encoder fine-tunes, native zero-shot VLMs, linear bridges, and "
+             "resampler bridges are "
              "reported separately; no cross-family ranking is computed.", ""]
-    for family, title in (("attention_probe", "Attention probe"), ("zero_shot", "Native zero-shot"),
+    for family, title in (("attention_probe", "Attention probe"),
+                          ("encoder_finetune", "Budgeted encoder fine-tune"),
+                          ("zero_shot", "Native zero-shot"),
                           ("linear_bridge", "Linear bridge"), ("resampler_bridge", "Resampler bridge")):
         lines.extend((f"## {title}", ""))
         entries = report[family]
