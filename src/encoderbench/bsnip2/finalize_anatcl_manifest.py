@@ -21,14 +21,9 @@ subject-for-subject identical -- verified against bsnip2_mass.csv below.
 from __future__ import annotations
 
 import csv
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from encoderbench.manifest import (  # noqa: E402
-    carve_validation, stratified_subject_split, validate_manifest, write_manifest,
-)
+from encoderbench.manifest import carve_validation, stratified_subject_split, validate_manifest, write_manifest
 
 SOURCE = "data/manifests/bsnip2_brainiac_final.csv"
 OUTPUT = "data/manifests/bsnip2_anatcl.csv"

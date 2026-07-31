@@ -15,12 +15,7 @@ ADNI/SCZ workflows also guarantee.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from encoderbench.manifest import (  # noqa: E402
+from encoderbench.manifest import (
     FIELDS, carve_validation, stratified_subject_split, validate_manifest, write_manifest,
 )
 

@@ -20,14 +20,9 @@ subjects for every encoder.
 from __future__ import annotations
 
 import csv
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from encoderbench.manifest import (  # noqa: E402
-    carve_validation, stratified_subject_split, validate_manifest, write_manifest,
-)
+from encoderbench.manifest import carve_validation, stratified_subject_split, validate_manifest, write_manifest
 
 SOURCE = "data/manifests/bsnip2_raw.csv"
 OUTPUT = "data/manifests/bsnip2_synthseg.csv"
