@@ -1,3 +1,11 @@
+# Identical to default.yaml except checkpoints.synthseg, which must point at
+# the BSNIP2 posteriors instead of ADNI's -- SynthSeg has no single shared
+# checkpoint across datasets the way the other five encoders do (each dataset
+# gets its own mri_synthseg run, see freesurfer_install/submit_synthseg_bsnip2.sh).
+# Every other setting (seeds, budgets, epochs, split protocol, ...) is
+# untouched so bsnip2:synthseg runs stay comparable to ad:synthseg and to the
+# other bsnip2:<encoder> runs. config.py's _validate() enforces the frozen
+# fields regardless.
 workspace_root: /net/projects2/litian-lab/scpan
 output_root: /net/projects2/litian-lab/scpan/encoders/artifacts
 manifests:
@@ -9,7 +17,7 @@ manifests:
   # passes --manifest explicitly (data/manifests/bsnip2_<encoder>.csv). This
   # key exists only so `disease in DISEASES` config paths that resolve a
   # default without an override don't 404.
-  bsnip2: /net/projects2/litian-lab/scpan/encoders/data/manifests/bsnip2_medsiglip.csv
+  bsnip2: /net/projects2/litian-lab/scpan/encoders/data/manifests/bsnip2_synthseg.csv
 checkpoints:
   medsiglip: /net/projects2/litian-lab/scpan/model_weights/medsiglip
   medgemma: /net/projects2/litian-lab/scpan/model_weights/medgemma
@@ -17,7 +25,7 @@ checkpoints:
   mass: /net/projects2/litian-lab/scpan/model_weights/MASS/mass_base.pth
   brainiac: /net/projects2/litian-lab/scpan/model_weights/brainIAC/BrainIAC.ckpt
   anatcl: /net/projects2/litian-lab/scpan/model_weights/AnatCL/global_fold0.pth
-  synthseg: /net/projects2/litian-lab/scpan/dataset/ADNI_processed/synthseg_outputs
+  synthseg: /net/projects2/litian-lab/scpan/dataset/bsnp2_final/synthseg_outputs
 source_repositories:
   braingemma3d: /net/projects2/litian-lab/scpan/BrainGemma3D
   mass: /net/projects2/litian-lab/scpan/MASS

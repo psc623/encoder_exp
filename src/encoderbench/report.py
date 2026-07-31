@@ -85,7 +85,7 @@ def generate_report(input_root: str | Path, output_dir: str | Path,
 def _paired(records: list[dict[str, Any]], samples: int, seed: int) -> dict[str, Any]:
     output: dict[str, Any] = {}
     for family in ("attention_probe", "encoder_finetune", "linear_bridge", "resampler_bridge"):
-        for disease in ("ad", "scz"):
+        for disease in ("ad", "scz", "bsnip2"):
             subset = [item for item in records if item["kind"] == family and item["disease"] == disease
                       and not item.get("shuffled_labels")]
             by_encoder: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -97,7 +97,7 @@ def _paired(records: list[dict[str, Any]], samples: int, seed: int) -> dict[str,
                 second_by_seed = {item["seed"]: item for item in by_encoder[second]}
                 for run_seed in sorted(set(first_by_seed) & set(second_by_seed)):
                     a, b = first_by_seed[run_seed], second_by_seed[run_seed]
-                    positive = "AD" if disease == "ad" else "SCZ"
+                    positive = "AD" if disease == "ad" else ("SZ" if disease == "bsnip2" else "SCZ")
                     truth_a, prediction_a = _subject_predictions(a["predictions"], positive)
                     truth_b, prediction_b = _subject_predictions(b["predictions"], positive)
                     if truth_a != truth_b:

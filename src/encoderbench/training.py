@@ -22,6 +22,29 @@ def _labels(cache: FeatureCache, positive: str) -> np.ndarray:
     return (cache.labels == positive).astype(np.int64)
 
 
+def token_normalization(train_features: np.ndarray) -> tuple["torch.Tensor", "torch.Tensor"]:
+    """Per-channel statistics over every training *token*, with a relative floor.
+
+    The head standardizes individual tokens, so the statistics are taken over
+    individual tokens rather than over each volume's token-mean. Averaging 64
+    tokens first collapses any channel whose only across-token content is the
+    fixed position encoding: such a channel has identical values in every
+    volume, so its token-mean standard deviation is exactly 0. AnatCL's ResNet18
+    layer4 is post-ReLU and has two permanently dead channels of that kind;
+    dividing them by the old 1e-6 clamp scaled them to ~1.2e5, which saturated
+    every tanh unit in the attention MLP and left the attention weights
+    identical for all subjects. The relative floor keeps any remaining
+    low-variance channel from dominating the same way.
+    """
+    import torch
+
+    flat = train_features.reshape(-1, train_features.shape[-1])
+    mean = torch.from_numpy(flat.mean(axis=0).astype(np.float32))
+    std = torch.from_numpy(flat.std(axis=0).astype(np.float32))
+    floor = torch.clamp(0.01 * std.median(), min=1e-6)
+    return mean, std.clamp_min(floor)
+
+
 def _class_weights(labels: np.ndarray) -> "torch.Tensor":
     import torch
 
@@ -80,9 +103,7 @@ def run_probe(cache_path: str | Path, output_dir: str | Path, positive: str, see
     if shuffled:
         train_y = train_y[np.random.default_rng(seed).permutation(len(train_y))]
     train_features = cache.features[split_indices["train"]]
-    pooled = train_features.mean(axis=1)
-    mean = torch.from_numpy(pooled.mean(axis=0))
-    std = torch.from_numpy(pooled.std(axis=0) + 1e-6)
+    mean, std = token_normalization(train_features)
     weights = _class_weights(train_y).to(resolved_device)
     width = cache.features.shape[-1]
     best: dict[str, Any] | None = None

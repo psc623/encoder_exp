@@ -13,7 +13,8 @@ import numpy as np
 
 from encoderbench.cache import FeatureCache, load_cache
 from encoderbench.manifest import read_manifest
-from encoderbench.training import _class_weights, _summary, _write_predictions
+from encoderbench.training import (_class_weights, _summary, _write_predictions,
+                                   token_normalization)
 from encoderbench.utils import checkpoint_identifier, ensure_parent, set_seed, sha256_file, write_json
 
 
@@ -84,8 +85,12 @@ def _aligned_cache(rows: list[dict[str, str]], cache: FeatureCache) -> tuple[np.
         raise ValueError("Feature cache and manifest contain different row counts")
     train = np.asarray([position for position, row in enumerate(rows) if row["split"] == "train"])
     aligned = cache.features[np.asarray(order)]
-    pooled = aligned[train].mean(axis=1)
-    return pooled.mean(axis=0).astype(np.float32), (pooled.std(axis=0) + 1e-6).astype(np.float32)
+    # Same statistics the attention probe uses: over individual tokens, with a
+    # relative floor. Taking them over each volume's token-mean (as this did)
+    # gives std exactly 0 for any channel whose only across-token content is the
+    # fixed position encoding, which then blows up to ~1e5 after division.
+    mean, std = token_normalization(aligned[train])
+    return mean.numpy().astype(np.float32), std.numpy().astype(np.float32)
 
 
 def _evaluation_cache(rows: list[dict[str, str]], encoder: str, width: int,
@@ -123,6 +128,31 @@ def _load_encoder_delta(model: "torch.nn.Module", state: dict[str, "torch.Tensor
     with __import__("torch").no_grad():
         for name, value in state.items():
             parameters[name].copy_(value.to(parameters[name].device, dtype=parameters[name].dtype))
+
+
+def _warm_start_head(head: "torch.nn.Module", config: dict[str, Any], disease: str,
+                     encoder: str, seed: int) -> str | None:
+    """Load the probe's already-tuned head as finetune's starting point.
+
+    Without this, finetune trains a randomly-initialized head from scratch under
+    a far smaller budget than probe used (12 epochs/one weight decay vs up to 300
+    epochs/a 5-way weight-decay grid search), which confounds "did unfreezing the
+    encoder help" with "did this head, trained worse, do worse". Warm-starting
+    means finetune measures the encoder-adaptation effect starting from the same
+    point probe already found, instead of from a fresh coin flip.
+
+    Returns the checkpoint path used, or None if no matching probe checkpoint
+    exists (finetune still proceeds with the random initialization in that case).
+    """
+    import torch
+
+    checkpoint = (Path(config["output_root"]) / "attention" / disease / encoder /
+                 f"probe_seed_{seed}.pt")
+    if not checkpoint.is_file():
+        return None
+    probe = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    head.load_state_dict(probe["model_state"])
+    return str(checkpoint)
 
 
 def _protocol_digest(manifest_path: str | Path, encoder: str, seed: int,
@@ -178,7 +208,7 @@ def run_finetune(manifest_path: str | Path, cache_path: str | Path, disease: str
     width = int(cache.features.shape[-1])
     mean, std = torch.from_numpy(mean_np), torch.from_numpy(std_np)
     eval_cache = _evaluation_cache(rows, encoder, width, disease)
-    positive = "AD" if disease == "ad" else "SCZ"
+    positive = "AD" if disease == "ad" else ("SZ" if disease == "bsnip2" else "SCZ")
     labels = np.asarray([1 if row["group"] == positive else 0 for row in rows], dtype=np.int64)
     indices = {split: np.asarray([index for index, row in enumerate(rows) if row["split"] == split])
                for split in ("train", "validation", "test")}
@@ -188,7 +218,9 @@ def run_finetune(manifest_path: str | Path, cache_path: str | Path, disease: str
 
     extractor = build_extractor(encoder, config, str(resolved_device))
     budget_audit = configure_parameter_budget(extractor, int(settings["parameter_budget"]))
-    head = AttentionPoolHead(width, mean, std, int(settings["hidden_size"])).to(resolved_device)
+    head = AttentionPoolHead(width, mean, std, int(settings["hidden_size"]))
+    head_warm_start = _warm_start_head(head, config, disease, encoder, seed)
+    head = head.to(resolved_device)
     class_weights = _class_weights(train_targets).to(resolved_device)
     loss_function = nn.CrossEntropyLoss(weight=class_weights)
     encoder_parameters = [parameter for parameter in extractor.model.parameters()
@@ -331,6 +363,7 @@ def run_finetune(manifest_path: str | Path, cache_path: str | Path, disease: str
     result = {
         "kind": "encoder_finetune", "disease": disease, "encoder": encoder, "seed": seed,
         "shuffled_labels": shuffled, "positive_label": positive, "selection": best,
+        "head_warm_started_from": head_warm_start,
         "parameter_budget": budget_audit,
         "gradient_audit": selected["gradient_audit"],
         "trainable_parameters": budget_audit["trainable_encoder_parameters"]

@@ -12,7 +12,11 @@ from encoderbench.config import DISEASES, ENCODERS, ExperimentConfig, load_confi
 
 
 def _positive(disease: str) -> str:
-    return "AD" if disease == "ad" else "SCZ"
+    if disease == "ad":
+        return "AD"
+    if disease == "bsnip2":
+        return "SZ"
+    return "SCZ"
 
 
 def _seeds(value: str, configured: list[int]) -> list[int]:
@@ -66,6 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
     cache.add_argument("encoder", choices=ENCODERS)
     cache.add_argument("--manifest", default=None)
     cache.add_argument("--device", default="auto")
+    cache.add_argument("--layer", type=int, default=None,
+                       help="Override the configured encoder depth (-1 = deepest)")
     cache.add_argument("--out", default=None)
 
     probe = sub.add_parser("probe", help="Train formal attention-probe seeds")
@@ -188,7 +194,7 @@ def _dispatch(args: argparse.Namespace, config: ExperimentConfig) -> Any:
         _gate(config, args.disease)
         output = Path(args.out or _cache_path(config, args.disease, args.encoder))
         result = cache_features(args.manifest or config.manifest(args.disease), args.disease,
-                                args.encoder, raw, output, args.device)
+                                args.encoder, raw, output, args.device, args.layer)
         return {"cache": str(result)}
     if args.command == "probe":
         from encoderbench.training import run_probe

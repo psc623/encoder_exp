@@ -8,3 +8,9 @@ htmlcov/
 artifacts/
 data/manifests/*
 !data/manifests/.gitkeep
+med/
+med310/
+pyenv312/
+data/
+--seeds
+logs/

@@ -100,11 +100,11 @@ def smoke_extractor(manifest_path: str | Path, disease: str, encoder: str,
 
 def cache_features(manifest_path: str | Path, disease: str, encoder: str,
                    config: dict[str, Any], output_path: str | Path,
-                   device: str = "auto") -> Path:
+                   device: str = "auto", layer: int | None = None) -> Path:
     from encoderbench.extractors import build_extractor
 
     rows = read_manifest(manifest_path)
-    extractor = build_extractor(encoder, config, resolve_device(device))
+    extractor = build_extractor(encoder, config, resolve_device(device), layer)
     features, audits = [], []
     native_grids: set[tuple[int, int, int]] = set()
     for position, row in enumerate(rows):
@@ -117,6 +117,7 @@ def cache_features(manifest_path: str | Path, disease: str, encoder: str,
     array = np.stack(features)
     dtype = np.float16 if config["features"]["cache_dtype"] == "float16" else np.float32
     metadata = {"disease": disease, "encoder": encoder, "sample_count": len(rows),
+                "layer": extractor.layer,
                 "token_shape": list(array.shape[1:]), "native_grids": [list(g) for g in sorted(native_grids)],
                 "position_encoding": "fixed_3d_sinusoidal", "sample_audits": audits}
     cache = FeatureCache(features=array.astype(dtype),

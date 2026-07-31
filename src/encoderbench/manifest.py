@@ -12,7 +12,7 @@ from encoderbench.utils import ensure_parent
 
 
 FIELDS = ("path", "file_id", "subject_id", "group", "is_repeat", "split")
-LABELS = {"ad": ("CN", "AD"), "scz": ("CN", "SCZ")}
+LABELS = {"ad": ("CN", "AD"), "scz": ("CN", "SCZ"), "bsnip2": ("CN", "SZ")}
 
 
 def read_manifest(path: str | Path, split: str | None = None) -> list[dict[str, str]]:

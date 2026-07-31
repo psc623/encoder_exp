@@ -13,8 +13,8 @@ from encoderbench.utils import resolve_env
 
 
 DEFAULT_CONFIG = Path("/net/projects2/litian-lab/scpan/encoders/config/default.yaml")
-ENCODERS = ("medsiglip", "braingemma3d", "mass", "brainiac")
-DISEASES = ("ad", "scz")
+ENCODERS = ("medsiglip", "braingemma3d", "mass", "brainiac", "anatcl", "synthseg")
+DISEASES = ("ad", "scz", "bsnip2")
 
 
 @dataclass(frozen=True)
