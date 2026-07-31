@@ -11,12 +11,12 @@ OUT_MANIFEST=data/manifests/adni_brainiac_registered.csv
 N=$(python -c "import csv; print(len(list(csv.DictReader(open('$MANIFEST')))))")
 echo "=== registering $N volumes, $(date) ==="
 
-seq 0 $((N - 1)) | xargs -P 32 -I{} python register_brainiac_template.py \
+seq 0 $((N - 1)) | xargs -P 32 -I{} python scripts/register_brainiac_template.py \
   --manifest "$MANIFEST" --template "$TEMPLATE" \
   --out-dir "$OUT_DIR" --out-manifest unused --single-index {}
 
 echo "=== registration pass done, $(date) ==="
 echo "=== merging manifest ==="
-python register_brainiac_template.py \
+python scripts/register_brainiac_template.py \
   --manifest "$MANIFEST" --template "$TEMPLATE" \
   --out-dir "$OUT_DIR" --out-manifest "$OUT_MANIFEST" --merge

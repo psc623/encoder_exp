@@ -11,7 +11,7 @@
 #SBATCH --output=/net/projects2/litian-lab/scpan/logs/bsnip2_synthseg_%j.log
 #
 # BSNIP2 SZ/HC counterpart of the ADNI SynthSeg runs, same protocol as
-# sbatch_bsnip2_run.sh (cache once, probe with/without shuffled labels, then
+# slurm/sbatch_bsnip2_run.sh (cache once, probe with/without shuffled labels, then
 # finetune -- same seeds 0/1/2, same shared probe/finetune settings). Uses
 # config/bsnip2_synthseg.yaml, which is byte-identical to config/default.yaml
 # except checkpoints.synthseg (points at the BSNIP2 mri_synthseg posteriors

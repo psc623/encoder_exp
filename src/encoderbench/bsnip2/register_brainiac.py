@@ -1,7 +1,7 @@
 """Rigid-register raw whole-head BSNIP2 T1 volumes to BrainIAC's own
 registration template (temp_head.nii.gz).
 
-Unlike register_brainiac_template.py (ADNI), BSNIP2's raw manifest rows are
+Unlike scripts/register_brainiac_template.py (ADNI), BSNIP2's raw manifest rows are
 genuinely un-skull-stripped whole-head scans, so this mirrors the full
 registration() step in BrainIAC/src/preprocessing/mri_preprocess_3d_simple.py
 (same N4 bias correction, same Euler3D + Mattes Mutual Information rigid
@@ -10,7 +10,7 @@ separate later step (bsnip2_hdbet_batch.py) run once in a batched GPU pass
 rather than per-file here, since spinning up a fresh process per volume would
 reload the network every time.
 
-Same --single-index / --merge split as register_brainiac_template.py, for the
+Same --single-index / --merge split as scripts/register_brainiac_template.py, for the
 same reason: this cluster's venvs symlink to the node's floating
 /usr/bin/python3, so shell-level xargs parallelism is used instead of Python
 multiprocessing.
@@ -37,7 +37,7 @@ def n4_correct_fast(image: "sitk.Image", shrink_factor: int = 4) -> "sitk.Image"
 
     BSNIP2's raw whole-head volumes are 256x256x170 (~11M voxels) vs. ADNI's
     already skull-stripped/box-cropped 122x127x120 (~1.9M voxels) that
-    register_brainiac_template.py's plain `sitk.N4BiasFieldCorrection(image)`
+    scripts/register_brainiac_template.py's plain `sitk.N4BiasFieldCorrection(image)`
     call was tuned against. N4's cost grows much faster than linearly with
     voxel count, and running it unshrunk here measured well under 1 volume
     per 30 minutes even after fixing thread oversubscription -- 509 volumes

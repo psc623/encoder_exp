@@ -236,7 +236,7 @@ segmentation run, not two names for the same thing.** *Posteriors* (`SynthSegExt
 reads the 33-class per-voxel posterior-probability volume from `mri_synthseg --post`
 and pools it through the identical attention-pooling pipeline (4x4x4 grid, same
 position encoding) used for every learned encoder -- it's compared as if it were a
-frozen backbone. *Volumetry* (`volumetry_baseline.py`) instead reads the scalar
+frozen backbone. *Volumetry* (`scripts/volumetry_baseline.py`) instead reads the scalar
 per-structure volumes from `mri_synthseg --vol` (e.g. "left hippocampus in mm^3"),
 divides by intracranial volume, and fits plain logistic regression -- no pooling, no
 position encoding, no learned representation at all. It's the classical
