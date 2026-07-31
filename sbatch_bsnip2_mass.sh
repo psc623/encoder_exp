@@ -29,11 +29,11 @@ N=$(python -c "import csv; print(len(list(csv.DictReader(open('$MANIFEST')))))")
 echo "manifest rows: $N"
 
 echo "--- reorient + resample + body crop (CPU, 32-way parallel) ---"
-seq 0 $((N - 1)) | xargs -P 32 -I{} python bsnip2_preprocess_mass.py \
+seq 0 $((N - 1)) | xargs -P 32 -I{} python -m encoderbench.bsnip2.preprocess_mass \
   --manifest "$MANIFEST" --out-dir "$OUT_DIR" --single-index {}
 
 echo "--- merge ---"
-python bsnip2_preprocess_mass.py --manifest "$MANIFEST" \
+python -m encoderbench.bsnip2.preprocess_mass --manifest "$MANIFEST" \
   --out-dir "$OUT_DIR" --out-manifest "$FINAL_MANIFEST" --merge
 
 wc -l "$FINAL_MANIFEST" 2>/dev/null

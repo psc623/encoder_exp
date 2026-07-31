@@ -11,7 +11,7 @@
 #SBATCH --output=/net/projects2/litian-lab/scpan/logs/bsnip2_anatcl_%j.log
 #
 # AnatCL never ran on BSNIP2 before. Reuses BrainIAC's already registered +
-# skull-stripped bsnp2 images (bsnip2_finalize_anatcl_manifest.py) as input --
+# skull-stripped bsnp2 images (src/encoderbench/bsnip2/finalize_anatcl_manifest.py) as input --
 # no new preprocessing needed. Same protocol as sbatch_bsnip2_run.sh: cache
 # once, probe with/without shuffled labels, then finetune -- and finetune now
 # warm-starts its head from this run's own probe checkpoint (finetune.py's

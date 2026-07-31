@@ -32,7 +32,7 @@ echo "=== bsnip2 medsiglip preprocessing on $(hostname) started $(date -u) ==="
 nvidia-smi -L
 
 echo "--- HD-BET skull-strip (GPU, one batched process) ---"
-python bsnip2_hdbet_batch.py --manifest "$MANIFEST" --out-dir "$OUT_DIR" \
+python -m encoderbench.bsnip2.hdbet_batch --manifest "$MANIFEST" --out-dir "$OUT_DIR" \
   --out-manifest "$FINAL_MANIFEST" --device 0 --mode fast
 
 wc -l "$FINAL_MANIFEST" 2>/dev/null

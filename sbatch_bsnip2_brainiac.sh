@@ -35,17 +35,17 @@ N=$(python -c "import csv; print(len(list(csv.DictReader(open('$MANIFEST')))))")
 echo "manifest rows: $N"
 
 echo "--- step 1/3: N4 + rigid registration (CPU, 32-way parallel) ---"
-seq 0 $((N - 1)) | xargs -P 32 -I{} python bsnip2_register_brainiac.py \
+seq 0 $((N - 1)) | xargs -P 32 -I{} python -m encoderbench.bsnip2.register_brainiac \
   --manifest "$MANIFEST" --template "$TEMPLATE" \
   --out-dir "$REG_DIR" --single-index {}
 reg_status=$?
 
 echo "--- step 1/3 merge ---"
-python bsnip2_register_brainiac.py --manifest "$MANIFEST" --template "$TEMPLATE" \
+python -m encoderbench.bsnip2.register_brainiac --manifest "$MANIFEST" --template "$TEMPLATE" \
   --out-dir "$REG_DIR" --out-manifest "$REG_MANIFEST" --merge
 
 echo "--- step 2/3: HD-BET skull-strip (GPU, one batched process) ---"
-python bsnip2_hdbet_batch.py --manifest "$REG_MANIFEST" --out-dir "$SS_DIR" \
+python -m encoderbench.bsnip2.hdbet_batch --manifest "$REG_MANIFEST" --out-dir "$SS_DIR" \
   --out-manifest "$FINAL_MANIFEST" --device 0 --mode fast
 
 echo "--- step 3/3 summary ---"
