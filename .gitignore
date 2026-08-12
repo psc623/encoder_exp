@@ -18,4 +18,15 @@ report/
 plan_v2.md
 plan_detail.md
 RESULTS.md
-README.md
+
+# Slurm wrappers are hardcoded to this cluster (partition, conda prefix, log
+# paths). Three representative ones are published as examples; the rest stay local.
+slurm/*
+!slurm/sbatch_scaling_exp_dataset2.sh
+!slurm/sbatch_scaling_improve.sh
+!slurm/sbatch_improved_bsnip2_mass.sh
+
+# Report generators that only read artifacts/, which is never published.
+scripts/generate_*_report.py
+scripts/append_multiclass_to_scaling_report.py
+scripts/check_ba_threshold*.py
