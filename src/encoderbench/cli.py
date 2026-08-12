@@ -64,10 +64,6 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--device", default="auto")
     smoke.add_argument("--out", default=None)
 
-    token = sub.add_parser("token-audit", help="Audit A/B in the actual chat generation context")
-    token.add_argument("disease", choices=DISEASES)
-    token.add_argument("--out", default=None)
-
     cache = sub.add_parser("cache", help="Extract and cache one encoder's 64-token grid")
     cache.add_argument("disease", choices=DISEASES)
     cache.add_argument("encoder", choices=ENCODERS)
@@ -127,16 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
     zero.add_argument("--merge-only", action="store_true",
                       help="Merge completed shards without loading a model")
 
-    bridge = sub.add_parser("bridge", help="Train formal frozen-LLM bridge seeds")
-    bridge.add_argument("disease", choices=DISEASES)
-    bridge.add_argument("encoder", choices=ENCODERS)
-    bridge.add_argument("kind", choices=("linear", "resampler"))
-    bridge.add_argument("--cache", default=None)
-    bridge.add_argument("--seeds", default="all", help="all or comma-separated subset of 0,1,2")
-    bridge.add_argument("--device", default="cuda")
-    bridge.add_argument("--out-dir", default=None)
-
-    sub.add_parser("lock-ad", help="Verify all 50 AD runs and freeze configuration for SCZ")
+    sub.add_parser("lock-ad", help="Verify every AD run and freeze configuration for SCZ")
 
     report = sub.add_parser("report", help="Aggregate seeds and paired comparisons")
     report.add_argument("--input-root", default=None)
@@ -188,23 +175,6 @@ def _dispatch(args: argparse.Namespace, config: ExperimentConfig) -> Any:
         manifest = args.manifest or config.manifest(args.disease)
         output = args.out or config.output_root / "audits" / args.disease / f"{args.encoder}_smoke.json"
         return smoke_extractor(manifest, args.disease, args.encoder, raw, output, args.device)
-    if args.command == "token-audit":
-        from transformers import AutoTokenizer
-
-        from encoderbench.llm import audit_answer_tokens
-        from encoderbench.utils import write_json
-
-        _gate(config, args.disease)
-        tokenizer = AutoTokenizer.from_pretrained(raw["checkpoints"]["medgemma"], local_files_only=True)
-        audit = audit_answer_tokens(tokenizer, args.disease).to_dict()
-        audit["injection_order"] = "BOS + 64 visual tokens + prompt tokens + complete answer sequence"
-        audit["label_mask"] = "BOS, visual, and prompt positions=-100; every answer position=scored"
-        audit["masked_prefix_positions"] = 64 + len(audit["context_ids"])
-        audit["answer_a_scored_positions"] = len(audit["answer_a_ids"])
-        audit["answer_b_scored_positions"] = len(audit["answer_b_ids"])
-        output = args.out or config.output_root / "audits" / args.disease / "tokenizer.json"
-        write_json(output, audit)
-        return audit
     if args.command == "cache":
         from encoderbench.workflows import cache_features
 
@@ -259,17 +229,6 @@ def _dispatch(args: argparse.Namespace, config: ExperimentConfig) -> Any:
         return run_zero_shot(args.manifest or config.manifest(args.disease), args.disease,
                              args.model, raw, output, device, num_shards, shard_index,
                              args.restart, args.merge_only)
-    if args.command == "bridge":
-        from encoderbench.training import run_bridge
-
-        _gate(config, args.disease)
-        cache = args.cache or _cache_path(config, args.disease, args.encoder)
-        output = args.out_dir or config.output_root / "bridge" / args.disease / args.kind / args.encoder
-        results = [run_bridge(cache, output, _positive(args.disease), args.disease, args.kind,
-                              seed, raw["bridge"], raw["evaluation"],
-                              raw["checkpoints"]["medgemma"], args.device)
-                   for seed in _seeds(args.seeds, raw["bridge"]["seeds"])]
-        return {"runs": results}
     if args.command == "lock-ad":
         from encoderbench.phase import create_ad_lock
 

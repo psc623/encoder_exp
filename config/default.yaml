@@ -96,23 +96,6 @@ finetune:
   # training volumes. Same value used for both ad and bsnip2 so the two
   # SynthSeg finetune runs stay directly comparable to each other.
   synthseg_adapter_hidden_size: 4096
-bridge:
-  seeds: [0, 1, 2]
-  learning_rate: 0.0001
-  weight_decay: 0.01
-  micro_batch_size: 1
-  gradient_accumulation: 16
-  max_epochs: 5
-  warmup_fraction: 0.05
-  gradient_clip: 1.0
-  patience: 7
-  precision: bf16
-  rank: 512
-  llm_hidden_size: 2560
-  query_count: 64
-  resampler_layers: 2
-  attention_heads: 8
-  ffn_size: 2048
 evaluation:
   bootstrap_samples: 2000
   bootstrap_seed: 0

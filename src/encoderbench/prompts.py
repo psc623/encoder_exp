@@ -1,18 +1,7 @@
-"""Frozen prompts for native zero-shot and supervised bridge experiments."""
+"""Frozen prompts for the native zero-shot experiments."""
 
 from __future__ import annotations
 
-
-BRIDGE_PROMPTS = {
-    "ad": """Classify this brain MRI as:
-A. Alzheimer's disease
-B. Cognitively normal
-Output only A or B.""",
-    "scz": """Classify this brain MRI as:
-A. Schizophrenia
-B. Cognitively normal
-Output only A or B.""",
-}
 
 NATIVE = {
     "ad": {

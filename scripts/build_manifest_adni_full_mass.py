@@ -9,8 +9,8 @@ Two modes, controlled by --groups and --all-visits:
 
 - Default (--groups CN,AD, screening only): baseline-visit AD/CN, one row per
   subject. This was the original binary AD-vs-CN protocol.
-- Expanded (--groups CN,MCI,AD --all-visits): every visit (screening, m6,
-  m12, ...) becomes its own row, MCI included. researchGroup was verified
+- Expanded (--all-visits): every visit (screening, m6, m12, ...) becomes its
+  own row. researchGroup was verified
   empirically to be a static per-subject field (0/843 subjects have more than
   one distinct value across their images), so every row for a given subject
   gets that subject's one fixed diagnosis regardless of which visit it's
@@ -31,9 +31,9 @@ does reuse manifest.stratified_subject_split / carve_validation /
 write_manifest unchanged (subject-level splitting already handles multiple
 rows per subject correctly -- every row for a subject is assigned that
 subject's split), so the split rule itself is identical to every other
-manifest in this repo. validate_manifest is only reused for the 2-class CN/AD
-case (it hard-checks against manifest.LABELS, which has no 3-class entry); the
-3-class case uses an equivalent, unrestricted local check instead.
+manifest in this repo. validate_manifest is only reused for the CN/AD case
+(it hard-checks against manifest.LABELS); any other group set uses an
+equivalent, unrestricted local check instead.
 """
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def is_repeat_variant(label: str) -> bool:
 
 def _validate_generic(rows: list[dict], groups: tuple[str, ...]) -> dict:
     """Same checks as manifest.validate_manifest, minus the disease/LABELS
-    restriction, for group sets manifest.LABELS has no entry for (3-class)."""
+    restriction, for group sets manifest.LABELS has no entry for."""
     allowed = set(groups)
     seen: dict[str, str] = {}
     split_subjects: dict[str, set[str]] = {s: set() for s in ("train", "validation", "test")}
@@ -121,7 +121,7 @@ def main() -> None:
     parser.add_argument("--image-root", type=Path, default=IMAGE_ROOT,
                         help="Directory of <subject>/<protocol>/<date>/I<uid>/*.nii (default: ADNI1 source)")
     parser.add_argument("--groups", default="CN,AD",
-                        help="Comma-separated researchGroup values to keep, e.g. CN,MCI,AD")
+                        help="Comma-separated researchGroup values to keep, e.g. CN,AD")
     parser.add_argument("--all-visits", action="store_true",
                         help="Use every visit per subject (one row per subject+visit) instead "
                              "of collapsing to a single baseline/screening row per subject")

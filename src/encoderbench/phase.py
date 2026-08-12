@@ -26,8 +26,6 @@ def create_ad_lock(output_root: str | Path, config_path: str | Path) -> Path:
             continue
     probe = {(item.get("encoder"), item.get("seed"), bool(item.get("shuffled_labels")))
              for item in summaries if item.get("kind") == "attention_probe"}
-    bridge = {(item.get("encoder"), item.get("seed"), item.get("kind"))
-              for item in summaries if item.get("kind") in ("linear_bridge", "resampler_bridge")}
     zero = {item.get("model") for item in summaries if item.get("kind") == "zero_shot"}
     missing = []
     for encoder in ENCODERS:
@@ -35,9 +33,6 @@ def create_ad_lock(output_root: str | Path, config_path: str | Path) -> Path:
             for shuffled in (False, True):
                 if (encoder, seed, shuffled) not in probe:
                     missing.append(f"probe:{encoder}:seed{seed}:shuffled={shuffled}")
-            for kind in ("linear_bridge", "resampler_bridge"):
-                if (encoder, seed, kind) not in bridge:
-                    missing.append(f"{kind}:{encoder}:seed{seed}")
     for model in ("medgemma", "braingemma3d"):
         if model not in zero:
             missing.append(f"zero_shot:{model}")

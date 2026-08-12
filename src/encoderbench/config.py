@@ -71,7 +71,7 @@ def _validate_seeds(name: str, seeds: Any) -> None:
 
 def _validate(raw: dict[str, Any]) -> None:
     for section in ("manifests", "checkpoints", "source_repositories", "data", "features",
-                    "probe", "finetune", "bridge", "evaluation"):
+                    "probe", "finetune", "evaluation"):
         if not isinstance(raw.get(section), dict):
             raise ValueError(f"Missing configuration section: {section}")
     data = raw["data"]
@@ -92,11 +92,6 @@ def _validate(raw: dict[str, Any]) -> None:
         raise ValueError("Finetune gradient_accumulation must be positive")
     if finetune.get("precision") != "bf16":
         raise ValueError("Finetune precision must be bf16")
-    bridge = raw["bridge"]
-    _validate_seeds("Bridge", bridge.get("seeds", ()))
-    effective_batch = int(bridge["micro_batch_size"]) * int(bridge["gradient_accumulation"])
-    if effective_batch != 16:
-        raise ValueError(f"Bridge effective batch size must equal 16, got {effective_batch}")
     max_new_tokens = int(raw["evaluation"].get("zero_shot_max_new_tokens", 0))
     if not 1 <= max_new_tokens <= 256:
         raise ValueError("zero_shot_max_new_tokens must be between 1 and 256")

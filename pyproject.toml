@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "encoderbench"
 version = "0.1.0"
-description = "Frozen brain-MRI encoder, zero-shot VLM, and MedGemma bridge experiments"
+description = "Frozen brain-MRI encoder and zero-shot VLM benchmarking experiments"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

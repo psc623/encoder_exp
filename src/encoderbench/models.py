@@ -1,4 +1,4 @@
-"""Common attention head and capacity-controlled bridge architectures."""
+"""Common attention-pooling head and shared model utilities."""
 
 from __future__ import annotations
 
@@ -52,93 +52,6 @@ class AttentionPoolHead(nn.Module):
         weights = torch.softmax(self.attention(normalized).squeeze(-1), dim=1)
         pooled = torch.sum(weights.unsqueeze(-1) * normalized, dim=1)
         return self.classifier(pooled)
-
-
-class FactorizedLinearBridge(nn.Module):
-    """Rank-limited linear mapping with no activation between projections."""
-
-    def __init__(self, input_width: int, output_width: int = 2560, rank: int = 512):
-        super().__init__()
-        self.input_norm = nn.LayerNorm(input_width)
-        self.down = nn.Linear(input_width, rank, bias=False)
-        self.up = nn.Linear(rank, output_width)
-        self.output_norm = nn.LayerNorm(output_width)
-        self.reset_parameters()
-
-    def reset_parameters(self) -> None:
-        nn.init.xavier_uniform_(self.down.weight)
-        nn.init.xavier_uniform_(self.up.weight)
-        nn.init.zeros_(self.up.bias)
-
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        return self.output_norm(self.up(self.down(self.input_norm(tokens))))
-
-
-class ResamplerLayer(nn.Module):
-    def __init__(self, width: int = 512, heads: int = 8, ffn_size: int = 2048):
-        super().__init__()
-        self.self_norm = nn.LayerNorm(width)
-        self.self_attention = nn.MultiheadAttention(width, heads, dropout=0.0, batch_first=True)
-        self.cross_query_norm = nn.LayerNorm(width)
-        self.cross_source_norm = nn.LayerNorm(width)
-        self.cross_attention = nn.MultiheadAttention(width, heads, dropout=0.0, batch_first=True)
-        self.ffn_norm = nn.LayerNorm(width)
-        self.ffn = nn.Sequential(nn.Linear(width, ffn_size), nn.GELU(), nn.Linear(ffn_size, width))
-
-    def forward(self, queries: torch.Tensor, source: torch.Tensor) -> torch.Tensor:
-        normalized = self.self_norm(queries)
-        queries = queries + self.self_attention(normalized, normalized, normalized, need_weights=False)[0]
-        normalized_queries = self.cross_query_norm(queries)
-        normalized_source = self.cross_source_norm(source)
-        queries = queries + self.cross_attention(
-            normalized_queries, normalized_source, normalized_source, need_weights=False
-        )[0]
-        return queries + self.ffn(self.ffn_norm(queries))
-
-
-class ResamplerBridge(nn.Module):
-    """Two-layer 64-query self/cross-attention bridge."""
-
-    def __init__(self, input_width: int, output_width: int = 2560, width: int = 512,
-                 query_count: int = 64, layers: int = 2, heads: int = 8,
-                 ffn_size: int = 2048):
-        super().__init__()
-        self.source_projection = nn.Linear(input_width, width)
-        self.queries = nn.Parameter(torch.empty(query_count, width))
-        self.layers = nn.ModuleList([ResamplerLayer(width, heads, ffn_size) for _ in range(layers)])
-        self.output_projection = nn.Linear(width, output_width)
-        self.output_norm = nn.LayerNorm(output_width)
-        self.reset_parameters()
-
-    def reset_parameters(self) -> None:
-        nn.init.normal_(self.queries, mean=0.0, std=0.02)
-        nn.init.xavier_uniform_(self.source_projection.weight)
-        nn.init.zeros_(self.source_projection.bias)
-        nn.init.xavier_uniform_(self.output_projection.weight)
-        nn.init.zeros_(self.output_projection.bias)
-        for module in self.layers.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
-
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        source = self.source_projection(tokens)
-        queries = self.queries.unsqueeze(0).expand(tokens.shape[0], -1, -1)
-        for layer in self.layers:
-            queries = layer(queries, source)
-        return self.output_norm(self.output_projection(queries))
-
-
-def build_bridge(kind: str, input_width: int, settings: dict[str, int]) -> nn.Module:
-    if kind == "linear":
-        return FactorizedLinearBridge(input_width, settings["llm_hidden_size"], settings["rank"])
-    if kind == "resampler":
-        return ResamplerBridge(input_width=input_width, output_width=settings["llm_hidden_size"],
-                               width=settings["rank"], query_count=settings["query_count"],
-                               layers=settings["resampler_layers"], heads=settings["attention_heads"],
-                               ffn_size=settings["ffn_size"])
-    raise ValueError("Bridge kind must be 'linear' or 'resampler'")
 
 
 def trainable_parameter_count(module: nn.Module) -> int:

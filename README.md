@@ -12,13 +12,11 @@ validation-selected depth, then evaluated in the same experiment families:
 | Frozen probe | attention-pooling head only | `encoderbench probe` |
 | End-to-end finetune | encoder + head, budgeted at ~16M trainable params | `encoderbench finetune` |
 | Zero-shot VLM | nothing (free generation) | `encoderbench zero-shot` |
-| Bridge to a frozen LLM | linear or resampler bridge into frozen MedGemma | `encoderbench bridge` |
 
 **Encoders:** MedSigLIP, BrainGemma3D, MASS, BrainIAC, AnatCL.
 **Baselines:** SynthSeg posteriors, and classical regional volumetry
 ([`scripts/volumetry_baseline.py`](scripts/volumetry_baseline.py)).
-**Tasks:** ADNI AD/CN (`ad`), ADNI 3-class CN/MCI/AD, UCLA CNP SCZ/CN (`scz`),
-BSNIP2 SZ/HC (`bsnip2`).
+**Tasks:** ADNI AD/CN (`ad`), UCLA CNP SCZ/CN (`scz`), BSNIP2 SZ/HC (`bsnip2`).
 
 A structural MRI is not a clinical schizophrenia diagnostic tool; the SCZ and
 BSNIP2 tasks measure research-cohort signal only.
@@ -52,8 +50,8 @@ Inside `src/encoderbench/`:
 | `training.py`, `linear_head.py` | attention-pooling head, probe training |
 | `finetune.py`, `finetune_variants.py` | budgeted end-to-end finetuning |
 | `cv_protocol.py`, `selection.py` | repeated-random-split protocol, model selection |
-| `metrics.py`, `metrics_multiclass.py` | balanced accuracy, ROC-AUC, subject-cluster bootstrap |
-| `llm.py`, `prompts.py`, `parsing.py`, `zero_shot.py` | frozen-VLM generation and scoring |
+| `metrics.py` | balanced accuracy, ROC-AUC, subject-cluster bootstrap |
+| `prompts.py`, `parsing.py`, `zero_shot.py` | frozen-VLM generation and scoring |
 | `report.py` | seed aggregation and paired comparisons |
 | `bsnip2/` | BSNIP2-specific manifest building and preprocessing |
 
@@ -100,8 +98,8 @@ pytest
 encoderbench --help
 ```
 
-Python ≥3.10, Linux, and a CUDA GPU with bf16 support for the finetune, zero-shot,
-and bridge paths. Frozen probes on a cached feature file run on CPU.
+Python ≥3.10, Linux, and a CUDA GPU with bf16 support for the finetune and
+zero-shot paths. Frozen probes on a cached feature file run on CPU.
 
 ## Pipeline
 
@@ -168,8 +166,6 @@ Aggregate reports never copy subject IDs, paths, or per-row predictions.
 - **Repeated random splits** (instead of one fixed split):
   [`scripts/run_cv_bsnip2_mass.py`](scripts/run_cv_bsnip2_mass.py),
   driven by `cv_protocol.py` — six modes from frozen attention to full finetune.
-- **3-class CN/MCI/AD:** [`scripts/run_probe_adni_mass_multiclass.py`](scripts/run_probe_adni_mass_multiclass.py)
-  and `run_finetune_adni_mass_multiclass.py`, with `config/adni_mass_scaling_exp_multiclass.yaml`.
 - **Dataset scaling:** the `config/adni_*_scaling*.yaml` series compares frozen-probe
   against joint-finetune as the training cohort grows.
   [`slurm/sbatch_scaling_exp_dataset2.sh`](slurm/sbatch_scaling_exp_dataset2.sh)
@@ -201,9 +197,8 @@ explicit `encoderbench smoke` command rather than a unit test.
 ## Failure behavior
 
 Invalid config invariants, missing manifests or checkpoints, unexpected encoder
-keys, non-finite tokens, wrong grids, trainable parameters inside a frozen encoder,
-and failed bridge gradient-isolation audits are all fatal and stop before or at the
-start of a run. Inference exceptions during zero-shot generation become `ERR`,
+keys, non-finite tokens, wrong grids, and trainable parameters inside a frozen
+encoder are all fatal and stop before or at the start of a run. Inference exceptions during zero-shot generation become `ERR`,
 retain their error text, and are forced wrong during scoring rather than dropped.
 
 ## Not in this repository

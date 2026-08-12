@@ -28,5 +28,5 @@ slurm/*
 
 # Report generators that only read artifacts/, which is never published.
 scripts/generate_*_report.py
-scripts/append_multiclass_to_scaling_report.py
+scripts/append_*_report.py
 scripts/check_ba_threshold*.py
