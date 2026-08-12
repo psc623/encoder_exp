@@ -27,7 +27,7 @@ import csv
 import sys
 from pathlib import Path
 
-BRAINIAC_PREPROCESSING = "/net/projects2/litian-lab/scpan/BrainIAC/src/preprocessing"
+BRAINIAC_PREPROCESSING = "/net/projects2/litian-lab/scpan/github_repo/BrainIAC/src/preprocessing"
 
 
 def read_rows(manifest: str) -> list[dict]:

@@ -19,10 +19,10 @@ checkpoints:
   anatcl: /net/projects2/litian-lab/scpan/model_weights/AnatCL/global_fold0.pth
   synthseg: /net/projects2/litian-lab/scpan/dataset/ADNI_processed/synthseg_outputs
 source_repositories:
-  braingemma3d: /net/projects2/litian-lab/scpan/BrainGemma3D
-  mass: /net/projects2/litian-lab/scpan/MASS
-  brainiac: /net/projects2/litian-lab/scpan/BrainIAC
-  anatcl: /net/projects2/litian-lab/scpan/AnatCL
+  braingemma3d: /net/projects2/litian-lab/scpan/github_repo/BrainGemma3D
+  mass: /net/projects2/litian-lab/scpan/github_repo/MASS
+  brainiac: /net/projects2/litian-lab/scpan/github_repo/BrainIAC
+  anatcl: /net/projects2/litian-lab/scpan/github_repo/AnatCL
 data:
   split_seed: 0
   test_fraction: 0.5

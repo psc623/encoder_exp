@@ -43,7 +43,8 @@ def binary_metrics(y_true: np.ndarray, y_pred: np.ndarray, probability: np.ndarr
 
 
 def aggregate_subjects(y_true: np.ndarray, probability: np.ndarray, subject_ids: np.ndarray,
-                       positive: str, negative: str = "CN") -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                       positive: str, negative: str = "CN",
+                       threshold: float = 0.5) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     grouped: dict[str, list[int]] = defaultdict(list)
     for index, subject in enumerate(subject_ids.astype(str)):
         grouped[subject].append(index)
@@ -57,7 +58,7 @@ def aggregate_subjects(y_true: np.ndarray, probability: np.ndarray, subject_ids:
         labels.append(next(iter(unique)))
         probabilities.append(float(np.mean(probability[indices])))
     probs = np.asarray(probabilities)
-    predictions = np.where(probs >= 0.5, positive, negative)
+    predictions = np.where(probs >= threshold, positive, negative)
     return np.asarray(labels), predictions, probs, np.asarray(subjects)
 
 

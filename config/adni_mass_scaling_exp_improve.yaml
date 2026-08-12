@@ -1,0 +1,200 @@
+workspace_root: /net/projects2/litian-lab/scpan
+output_root: /net/projects2/litian-lab/scpan/encoders/artifacts
+manifests:
+  ad: /net/projects2/litian-lab/scpan/encoders/data/manifests/adni.csv
+  scz: /net/projects2/litian-lab/scpan/encoders/data/manifests/scz.csv
+  bsnip2: /net/projects2/litian-lab/scpan/encoders/data/manifests/bsnip2_medsiglip.csv
+checkpoints:
+  medsiglip: /net/projects2/litian-lab/scpan/model_weights/medsiglip
+  medgemma: /net/projects2/litian-lab/scpan/model_weights/medgemma
+  braingemma3d: /net/projects2/litian-lab/scpan/model_weights/braingemma3D
+  mass: /net/projects2/litian-lab/scpan/model_weights/MASS/mass_base.pth
+  brainiac: /net/projects2/litian-lab/scpan/model_weights/brainIAC/BrainIAC.ckpt
+  anatcl: /net/projects2/litian-lab/scpan/model_weights/AnatCL/global_fold0.pth
+  synthseg: /net/projects2/litian-lab/scpan/dataset/ADNI_processed/synthseg_outputs
+source_repositories:
+  braingemma3d: /net/projects2/litian-lab/scpan/github_repo/BrainGemma3D
+  mass: /net/projects2/litian-lab/scpan/github_repo/MASS
+  brainiac: /net/projects2/litian-lab/scpan/github_repo/BrainIAC
+  anatcl: /net/projects2/litian-lab/scpan/github_repo/AnatCL
+data:
+  split_seed: 0
+  # Informational only for this experiment: A2ss70/B2ss70 read
+  # data/manifests/adni_full_mass_d2_reshuffled_ss.csv and A4/B4 read
+  # data/manifests/adni_full_mass4_ss.csv, both already built and frozen, and
+  # the feature caches bake the split in. Recorded at the fractions that
+  # produced those manifests (~70/15/15) so this file does not imply the old
+  # test_fraction=0.5 protocol.
+  test_fraction: 0.15
+  validation_fraction: 0.1765
+  axis: 2
+  num_slices: 24
+  slice_range: [0.15, 0.85]
+  roi_fraction: 1.0
+  low_percentile: 1.0
+  high_percentile: 99.0
+  volume_shapes:
+    braingemma3d: [64, 128, 128]
+    mass: [128, 128, 128]
+    brainiac: [96, 96, 96]
+    anatcl: [121, 128, 121]
+    synthseg: [128, 128, 128]
+features:
+  # Unused for MASS here -- read with --native-tokens, which bypasses
+  # _pool()/pooled_grid entirely. Left at the frozen shared value so
+  # config.py's cross-experiment validator still passes.
+  pooled_grid: [4, 4, 4]
+  cache_dtype: float16
+  layers:
+    medsiglip: 9
+    mass: 3
+    brainiac: 10
+    anatcl: 0
+
+# ---------------------------------------------------------------------------
+# What changed relative to config/adni_mass_scaling_exp.yaml, and why.
+#
+# Every change below came out of a per-epoch audit of the A2ss70/B2ss70/A4/B4
+# curves. The datasets, manifests, splits and feature caches are untouched --
+# this file changes only how the models are trained and how an epoch is picked.
+#
+# 1. Epoch selection (probe and finetune, identical rule -- see
+#    src/encoderbench/selection.py). The old rule was argmax over every
+#    recorded epoch of raw validation balanced accuracy. It selected epoch 279
+#    for A4 seed 0 whose validation loss bottomed at epoch 15, and epoch 260
+#    for A2ss70 seed 2 whose minimum was at epoch 121; both landed on the
+#    highest-weight-decay curve, whose epoch-to-epoch |delta BA| was 4-8x the
+#    other curves'. Validation-to-test drops of 0.10-0.12 followed directly.
+#    Now: validation AUC instead of balanced accuracy, trailing 3-epoch mean
+#    instead of a single epoch, and nothing past `select_guard` epochs after
+#    the running validation-loss minimum is eligible.
+# 2. Early stopping on validation loss with patience == select_guard, which is
+#    what makes the online selection rule equivalent to offline selection. The
+#    probe previously ran a fixed 300 epochs with no stopping at all, spending
+#    ~240 of them generating noisy candidates past its own loss minimum.
+# 3. Probe weight-decay grid cut from 5 values to 3. Measured: on a 33,539-
+#    parameter head, wd 0.0/0.001/0.01 produced identical validation losses to
+#    3 decimal places (A2ss70 seed 0: all three min at 0.413 @ epoch 19), and
+#    A4 seed 2 scored exactly 0.915 at epoch 47 for all of 0.0/0.001/0.01/0.1.
+#    Dropping the redundant values cuts the candidate count 1500 -> 900 and
+#    with it the selection optimism.
+# 4. encoder_learning_rate 5e-4 -> 1e-4, plus 3 epochs of head-only warm-up.
+#    Directly measured against the original MASS checkpoint: at 5e-4 the
+#    finetuned encoder had moved 28.8-38.7% in relative L2 (B2ss70 and B4, all
+#    six seeds), versus 0.09-1.13% at the old 1e-5. That is not adaptation, it
+#    is retraining -- and it destroyed the warm start inside epoch 1
+#    (validation BA fell to 0.50-0.61 from the probe's ~0.85).
+# 5. gradient_accumulation 8 -> 16. At an effective batch of 8, B's validation
+#    BA swung between 0.50 and 0.81 over the first five epochs.
+# 6. max_epochs 30 -> 40 for finetune, since the lower encoder rate and the
+#    frozen warm-up both slow early progress; early stopping decides the real
+#    length.
+#
+# --- Round 3, from measurements on the round-2 results (seeds 0-4) ----------
+#
+# 7. The decision threshold is now fitted on validation instead of hardcoded at
+#    0.5. Round 2 produced *identical* test AUC to round 1 on A2ss70 (0.910 vs
+#    0.910) while test balanced accuracy fell 0.842 -> 0.800: selecting on AUC
+#    ignores where the threshold sits, and balanced accuracy is measured at
+#    exactly that threshold. Re-thresholding the round-2 models recovered
+#    0.800 -> 0.863, past the round-1 number, and the size of the per-cell
+#    recovery tracked the size of the per-cell drop (A2ss70 +0.060, B4 +0.024).
+#    Every run reports `metrics` (fitted threshold) *and* `metrics_at_half`, so
+#    this change stays separately attributable from 8 and 9.
+# 8. label_smoothing 0.05 was tried in round 3 and REVERTED to 0.0 in round 4.
+#    The reasoning was sound -- cross-entropy has no minimum once the training
+#    split is separable, so `train_loss -> 0` reports a diverging weight norm
+#    rather than finished learning -- but the measurement disagreed. Scored at a
+#    common 0.5 threshold so the change is isolated from 7, smoothing left the
+#    frozen-probe cells untouched (test AUC 0.902 -> 0.901 and 0.910 -> 0.910)
+#    and cost the finetune cells about 0.03 AUC (0.939 -> 0.912, 0.956 -> 0.925).
+#    It also degraded the one effect this series has established: B - A fell
+#    from +0.066 (5/5 seeds) to +0.031 (3/5) on dataset2 and from +0.056 (4/5)
+#    to +0.020 (3/5) on dataset4. Capping the target confidence at 0.95 weakens
+#    exactly the gradients a 9.3M-parameter encoder needs inside a ~20-epoch
+#    budget; the 33k-parameter head is indifferent to it.
+# 9. Every epoch's validation predictions are recorded
+#    (`history[*].val_probability`). The one-standard-error selection rule that
+#    would fix round 2's drift towards late plateau epochs needs the standard
+#    error of the *paired* AUC difference on the shared validation subjects,
+#    not the marginal standard error; using the marginal value (~0.034) picks
+#    epoch 3 for B2ss70 seed 0, which would collapse B back into A. The
+#    tolerance therefore stays at 0 (plain argmax, i.e. round-2 behaviour)
+#    until those traces calibrate it.
+#
+# --- Round 4 -------------------------------------------------------------
+#
+# 10. Round 3's paired bootstrap over the recorded validation traces put the
+#     standard error of the paired AUC *difference* at 0.006-0.031 (median
+#     0.018), roughly half the marginal 0.034 as expected, and showed that a
+#     one-paired-SE rule would move selection 3-6 epochs earlier (B4 seed 1:
+#     epoch 28 -> 9). What it still could not show is whether earlier is
+#     *better*, because only validation predictions were recorded.
+#     `record_test_trace` fixes that: the test split is now scored every epoch
+#     and stored as `history[*].test_probability_diagnostic_only`. It is
+#     DIAGNOSTIC ONLY -- nothing in training, early stopping, threshold fitting
+#     or epoch selection reads it -- and exists so the epoch rule can be
+#     settled offline instead of by another training round. Turn it off for
+#     numbers meant to be quoted.
+# ---------------------------------------------------------------------------
+probe:
+  # Extended past the canonical three. On a 65-subject validation split the
+  # standard error of AUC is about 0.034 and of balanced accuracy about 0.044,
+  # which is wider than most of the A-vs-B and dataset2-vs-dataset4 gaps this
+  # series compares -- three seeds cannot say whether those gaps are real.
+  # Seeds 0-2 stay first and unchanged so three-seed comparisons against the
+  # earlier runs still read the same three runs.
+  seeds: [0, 1, 2, 3, 4]
+  learning_rate: 0.001
+  weight_decays: [0.01, 0.1, 1.0]
+  max_epochs: 300
+  batch_size: 32
+  hidden_size: 128
+  patience: 50
+  select_guard: 50
+  select_smooth_window: 3
+  # Round 3. See the block comment above `probe:` for the full list.
+  label_smoothing: 0.0
+  select_tolerance_standard_errors: 0.0
+finetune:
+  seeds: [0, 1, 2, 3, 4]
+  # No cap -- unfreezes every upstream MASS stage (inc/down1/down2/down3,
+  # 9,345,888 params), unchanged from the original experiment.
+  parameter_budget: 999000000
+  encoder_learning_rate: 0.0001
+  head_learning_rate: 0.001
+  encoder_freeze_epochs: 3
+  weight_decay: 0.01
+  max_epochs: 40
+  patience: 15
+  select_guard: 15
+  select_smooth_window: 3
+  label_smoothing: 0.0
+  select_tolerance_standard_errors: 0.0
+  record_test_trace: true
+  gradient_accumulation: 16
+  gradient_clip: 1.0
+  hidden_size: 128
+  precision: bf16
+  synthseg_adapter_hidden_size: 4096
+bridge:
+  seeds: [0, 1, 2]
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  micro_batch_size: 1
+  gradient_accumulation: 16
+  max_epochs: 5
+  warmup_fraction: 0.05
+  gradient_clip: 1.0
+  patience: 7
+  precision: bf16
+  rank: 512
+  llm_hidden_size: 2560
+  query_count: 64
+  resampler_layers: 2
+  attention_heads: 8
+  ffn_size: 2048
+evaluation:
+  bootstrap_samples: 2000
+  bootstrap_seed: 0
+  zero_shot_max_new_tokens: 128

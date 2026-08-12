@@ -20,8 +20,13 @@ class FeatureCache:
     metadata: dict[str, Any]
 
     def validate(self) -> None:
-        if self.features.ndim != 3 or self.features.shape[1] != 64:
-            raise ValueError(f"Expected cache shape [samples,64,dim], got {self.features.shape}")
+        # Token count used to be hardcoded to 64 (the pooled_grid=[4,4,4] protocol).
+        # native_tokens=True caches (see extractors.FrozenExtractor._native) have
+        # far more tokens (e.g. MASS layer 3 -> 4096), so only shape/rank are
+        # checked generically here; the pooled-vs-native distinction lives in
+        # cache.metadata["native_tokens"] instead.
+        if self.features.ndim != 3:
+            raise ValueError(f"Expected cache shape [samples,tokens,dim], got {self.features.shape}")
         count = self.features.shape[0]
         for name, values in (("file_ids", self.file_ids), ("subject_ids", self.subject_ids),
                              ("labels", self.labels), ("splits", self.splits)):

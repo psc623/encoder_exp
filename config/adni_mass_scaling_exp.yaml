@@ -1,0 +1,107 @@
+workspace_root: /net/projects2/litian-lab/scpan
+output_root: /net/projects2/litian-lab/scpan/encoders/artifacts
+manifests:
+  ad: /net/projects2/litian-lab/scpan/encoders/data/manifests/adni.csv
+  scz: /net/projects2/litian-lab/scpan/encoders/data/manifests/scz.csv
+  bsnip2: /net/projects2/litian-lab/scpan/encoders/data/manifests/bsnip2_medsiglip.csv
+checkpoints:
+  medsiglip: /net/projects2/litian-lab/scpan/model_weights/medsiglip
+  medgemma: /net/projects2/litian-lab/scpan/model_weights/medgemma
+  braingemma3d: /net/projects2/litian-lab/scpan/model_weights/braingemma3D
+  mass: /net/projects2/litian-lab/scpan/model_weights/MASS/mass_base.pth
+  brainiac: /net/projects2/litian-lab/scpan/model_weights/brainIAC/BrainIAC.ckpt
+  anatcl: /net/projects2/litian-lab/scpan/model_weights/AnatCL/global_fold0.pth
+  synthseg: /net/projects2/litian-lab/scpan/dataset/ADNI_processed/synthseg_outputs
+source_repositories:
+  braingemma3d: /net/projects2/litian-lab/scpan/github_repo/BrainGemma3D
+  mass: /net/projects2/litian-lab/scpan/github_repo/MASS
+  brainiac: /net/projects2/litian-lab/scpan/github_repo/BrainIAC
+  anatcl: /net/projects2/litian-lab/scpan/github_repo/AnatCL
+data:
+  split_seed: 0
+  test_fraction: 0.5
+  validation_fraction: 0.15
+  axis: 2
+  num_slices: 24
+  slice_range: [0.15, 0.85]
+  roi_fraction: 1.0
+  low_percentile: 1.0
+  high_percentile: 99.0
+  volume_shapes:
+    braingemma3d: [64, 128, 128]
+    mass: [128, 128, 128]
+    brainiac: [96, 96, 96]
+    anatcl: [121, 128, 121]
+    synthseg: [128, 128, 128]
+features:
+  # Unused for MASS in this experiment -- read with --native-tokens, which
+  # bypasses _pool()/pooled_grid entirely. Left at the frozen [4,4,4] shared
+  # value so config.py's cross-experiment validator still passes.
+  pooled_grid: [4, 4, 4]
+  cache_dtype: float16
+  layers:
+    medsiglip: 9
+    mass: 3
+    brainiac: 10
+    anatcl: 0
+probe:
+  # Unchanged from default.yaml: frozen-encoder probing is cheap (cached
+  # features, no encoder forward/backward), so 300 epochs/5-way weight-decay
+  # grid stays affordable and is the setting Group 2's 0.687 BA baseline was
+  # produced with. Only finetune's budget changes for this experiment.
+  seeds: [0, 1, 2]
+  learning_rate: 0.001
+  weight_decays: [0.0, 0.001, 0.01, 0.1, 1.0]
+  max_epochs: 300
+  batch_size: 32
+  hidden_size: 128
+finetune:
+  seeds: [0, 1, 2]
+  # No cap -- unfreezes every upstream MASS stage (inc/down1/down2/down3,
+  # 9,345,888 params), same as config/adni_full_mass_scaling.yaml.
+  parameter_budget: 999000000
+  # Raised 1e-5 -> 5e-4 for B3 only (A1/B1/A2/B2/A2ss/B2ss already ran and are
+  # unaffected -- their results are saved on disk, decoupled from this file).
+  # Measured directly: B1/B2/B2ss's finetuned encoder weights differed from
+  # the original MASS checkpoint by only 0.36-0.88% relative L2 norm at the
+  # old 1e-5 rate (best epoch found at 5-19 of 30, well under budget) -- the
+  # encoder was barely moving, which is why B tracked A so closely. This is
+  # the deliberate lever to let the encoder actually adapt instead of just
+  # nudging around its frozen starting point.
+  encoder_learning_rate: 0.0005
+  head_learning_rate: 0.001
+  weight_decay: 0.01
+  # Raised from 12 -> 30 for this A/B scaling comparison: Group 3's original
+  # protocol (warm-started head, same 9.3M params) converged comfortably
+  # within 30 epochs (best epoch 11/30), so this is a like-for-like budget
+  # given warm-starting is back. Patience raised 7 -> 15 to match (half the
+  # budget) so early stopping stays a real, achievable signal rather than a
+  # number early-stopping can never reach within the epoch cap.
+  max_epochs: 30
+  patience: 15
+  gradient_accumulation: 8
+  gradient_clip: 1.0
+  hidden_size: 128
+  precision: bf16
+  synthseg_adapter_hidden_size: 4096
+bridge:
+  seeds: [0, 1, 2]
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  micro_batch_size: 1
+  gradient_accumulation: 16
+  max_epochs: 5
+  warmup_fraction: 0.05
+  gradient_clip: 1.0
+  patience: 7
+  precision: bf16
+  rank: 512
+  llm_hidden_size: 2560
+  query_count: 64
+  resampler_layers: 2
+  attention_heads: 8
+  ffn_size: 2048
+evaluation:
+  bootstrap_samples: 2000
+  bootstrap_seed: 0
+  zero_shot_max_new_tokens: 128

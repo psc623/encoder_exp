@@ -20,9 +20,12 @@ def _positive(disease: str) -> str:
 
 
 def _seeds(value: str, configured: list[int]) -> list[int]:
+    # Bounded by whatever the config declares rather than a hardcoded {0,1,2},
+    # so a config that extends the seed list (see config._validate_seeds) can
+    # top up the new seeds with `--seeds 3,4` without rerunning 0-2.
     result = configured if value == "all" else [int(item.strip()) for item in value.split(",")]
-    if not result or not set(result) <= {0, 1, 2}:
-        raise ValueError("Training seeds must be a non-empty subset of 0,1,2")
+    if not result or not set(result) <= set(configured):
+        raise ValueError(f"Training seeds must be a non-empty subset of {configured}")
     return result
 
 
@@ -72,6 +75,8 @@ def build_parser() -> argparse.ArgumentParser:
     cache.add_argument("--device", default="auto")
     cache.add_argument("--layer", type=int, default=None,
                        help="Override the configured encoder depth (-1 = deepest)")
+    cache.add_argument("--native-tokens", action="store_true",
+                       help="Skip the shared pooled_grid compression (MASS only)")
     cache.add_argument("--out", default=None)
 
     probe = sub.add_parser("probe", help="Train formal attention-probe seeds")
@@ -93,6 +98,18 @@ def build_parser() -> argparse.ArgumentParser:
     finetune.add_argument("--shuffled-labels", action="store_true")
     finetune.add_argument("--device", default="cuda")
     finetune.add_argument("--restart", action="store_true")
+    finetune.add_argument("--layer", type=int, default=None,
+                          help="Override the configured encoder depth (-1 = deepest)")
+    finetune.add_argument("--native-tokens", action="store_true",
+                          help="Skip the shared pooled_grid compression (MASS only)")
+    finetune.add_argument("--no-warm-start", action="store_true",
+                          help="Train the attention head from scratch instead of warm-starting "
+                               "it from an existing probe checkpoint")
+    finetune.add_argument("--warm-start-dir", default=None,
+                          help="Directory containing probe_seed_N.pt to warm-start the head from, "
+                               "bypassing the default (disease, encoder)-keyed directory -- needed "
+                               "when more than one probe exists for the same disease/encoder pair "
+                               "(e.g. a native-token probe on a different manifest)")
     finetune.add_argument("--out-dir", default=None)
 
     zero = sub.add_parser("zero-shot", help="Run a frozen native VLM with free generation")
@@ -194,7 +211,8 @@ def _dispatch(args: argparse.Namespace, config: ExperimentConfig) -> Any:
         _gate(config, args.disease)
         output = Path(args.out or _cache_path(config, args.disease, args.encoder))
         result = cache_features(args.manifest or config.manifest(args.disease), args.disease,
-                                args.encoder, raw, output, args.device, args.layer)
+                                args.encoder, raw, output, args.device, args.layer,
+                                args.native_tokens)
         return {"cache": str(result)}
     if args.command == "probe":
         from encoderbench.training import run_probe
@@ -215,6 +233,7 @@ def _dispatch(args: argparse.Namespace, config: ExperimentConfig) -> Any:
         results = [run_finetune(
             args.manifest or config.manifest(args.disease), cache, args.disease, args.encoder,
             raw, output, seed, args.shuffled_labels, args.device, args.restart,
+            args.layer, args.native_tokens, not args.no_warm_start, args.warm_start_dir,
         ) for seed in _seeds(args.seeds, raw["finetune"]["seeds"])]
         return {"runs": results}
     if args.command == "zero-shot":

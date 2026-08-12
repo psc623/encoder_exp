@@ -23,9 +23,14 @@ class FrozenExtractor(ABC):
     intensity: str = "minmax_percentile"
 
     def __init__(self, device: str, pooled_grid: Sequence[int] = (4, 4, 4),
-                 layer: int = -1):
+                 layer: int = -1, native_tokens: bool = False):
         self.device = torch.device(device)
         self.pooled_grid = tuple(int(value) for value in pooled_grid)
+        # When True, forward_tokens skips the adaptive_avg_pool3d compression
+        # entirely and returns every native spatial location as its own token
+        # (see _native below). Off by default so every existing encoder/disease
+        # run is byte-for-byte unaffected; only MASSExtractor wires it in for now.
+        self.native_tokens = bool(native_tokens)
         # Depth to read features from, indexing an encoder-specific list of taps
         # ordered shallow to deep. -1 keeps the original protocol (the deepest
         # output, after any final norm). Self-supervised backbones often
@@ -111,6 +116,29 @@ class FrozenExtractor(ABC):
         if tokens.shape[1] != expected:
             raise RuntimeError(f"Expected {expected} pooled tokens, got {tokens.shape[1]}")
         positions = fixed_3d_position_encoding(self.pooled_grid, tokens.shape[-1]).to(tokens.device)
+        tokens = tokens + positions.unsqueeze(0)
+        if not torch.isfinite(tokens).all():
+            raise FloatingPointError(f"{self.name} produced NaN or Inf")
+        return tokens
+
+    def _native(self, feature_map: torch.Tensor) -> torch.Tensor:
+        """Every native spatial location as its own token -- no pooling, so no
+        information the encoder produced at this tap is discarded. Reuses the
+        same flatten/round-trip-verified `flattened` tensor _pool already
+        computes internally but throws away after pooling.
+        """
+        if feature_map.ndim != 5:
+            raise ValueError(f"Expected [B,C,D,H,W], got {tuple(feature_map.shape)}")
+        self.last_native_grid = tuple(int(value) for value in feature_map.shape[2:])
+        native_count = feature_map.shape[2] * feature_map.shape[3] * feature_map.shape[4]
+        flattened = feature_map.flatten(2).transpose(1, 2)
+        if flattened.shape[1] != native_count:
+            raise RuntimeError("Native feature grid did not flatten losslessly")
+        round_trip = flattened.transpose(1, 2).reshape_as(feature_map)
+        if not torch.equal(feature_map, round_trip):
+            raise RuntimeError("Feature flatten/reshape changed token order")
+        tokens = flattened.float()
+        positions = fixed_3d_position_encoding(self.last_native_grid, tokens.shape[-1]).to(tokens.device)
         tokens = tokens + positions.unsqueeze(0)
         if not torch.isfinite(tokens).all():
             raise FloatingPointError(f"{self.name} produced NaN or Inf")
@@ -270,8 +298,9 @@ class MASSExtractor(FrozenExtractor):
     intensity = "clip_zscore"
 
     def __init__(self, checkpoint: str | Path, repository: str | Path, device: str,
-                 data: dict[str, Any], pooled_grid: Sequence[int], layer: int = -1):
-        super().__init__(device, pooled_grid, layer)
+                 data: dict[str, Any], pooled_grid: Sequence[int], layer: int = -1,
+                 native_tokens: bool = False):
+        super().__init__(device, pooled_grid, layer, native_tokens)
         root = Path(repository).resolve()
         module = _load_module("encoderbench_mass_inference", root / "inference.py", root)
         self.model, model_config = module.load_model(Path(checkpoint), self.device, use_ema=True)
@@ -302,7 +331,8 @@ class MASSExtractor(FrozenExtractor):
         deepest = stages[0]
         if deepest.shape[1] != 512:
             raise ValueError(f"MASS deepest encoder width must be 512, got {deepest.shape[1]}")
-        return self._pool(self._select(tuple(reversed(stages)), deepest))
+        selected = self._select(tuple(reversed(stages)), deepest)
+        return self._native(selected) if self.native_tokens else self._pool(selected)
 
     def finetune_groups(self):
         encoder = self.model.encoder
@@ -492,7 +522,8 @@ class SynthSegExtractor(FrozenExtractor):
     name = "synthseg"
 
     def __init__(self, checkpoint: str | Path, device: str, data: dict[str, Any],
-                 pooled_grid: Sequence[int], adapter_hidden_size: int = 4096):
+                 pooled_grid: Sequence[int], adapter_hidden_size: int = 4096,
+                 pooled_cache: dict[str, torch.Tensor] | None = None):
         super().__init__(device, pooled_grid)
         root = Path(checkpoint).resolve()
         self.posteriors_dir = root / "post"
@@ -501,6 +532,14 @@ class SynthSegExtractor(FrozenExtractor):
         width = _infer_posterior_width(self.posteriors_dir)
         self.model = SynthSegPosteriorAdapter(width, adapter_hidden_size).to(self.device)
         self.shape = tuple(data["volume_shapes"]["synthseg"])
+        # Pooling has zero trainable parameters -- for finetune (which only ever
+        # trains the post-pooling adapter, see finetune_groups below) recomputing
+        # load+resize+pool from the raw posterior file on every forward pass is
+        # pure waste, and expensive (the raw posteriors are much larger than
+        # pooled_grid and resizing them is the dominant cost, ~6s/sample measured).
+        # If the caller already has this sample's pooled tokens (e.g. from the
+        # same cache mode1/mode2 read), skip straight to the adapter.
+        self.pooled_cache = pooled_cache
         self.load_audit = {"tool": "FreeSurfer mri_synthseg --robust --parc --post",
                            "posteriors_dir": str(self.posteriors_dir),
                            "missing_keys": [], "unexpected_keys": []}
@@ -521,25 +560,42 @@ class SynthSegExtractor(FrozenExtractor):
         return candidate
 
     def forward_tokens(self, path: str | Path) -> torch.Tensor:
-        posterior = load_posterior_tensor(self._posterior_path(path), self.shape).to(self.device)
-        return self.model(self._pool(posterior.unsqueeze(0)))
+        if self.pooled_cache is not None and str(path) in self.pooled_cache:
+            pooled = self.pooled_cache[str(path)].unsqueeze(0).to(self.device)
+        else:
+            posterior = load_posterior_tensor(self._posterior_path(path), self.shape).to(self.device)
+            pooled = self._pool(posterior.unsqueeze(0))
+        return self.model(pooled)
 
     def finetune_groups(self):
         return [("adapter", self.model)], []
 
 
 def build_extractor(name: str, config: dict[str, Any], device: str,
-                    layer: int | None = None) -> FrozenExtractor:
+                    layer: int | None = None, native_tokens: bool = False,
+                    pooled_grid_override: Sequence[int] | None = None,
+                    pooled_cache: dict[str, torch.Tensor] | None = None) -> FrozenExtractor:
     checkpoints, repositories = config["checkpoints"], config["source_repositories"]
     data, grid = config["data"], config["features"]["pooled_grid"]
+    if pooled_grid_override is not None:
+        # Escape hatch used only by the bsnip2-improved-report scripts: the frozen
+        # config validator pins pooled_grid to [4,4,4] for the default 6-encoder
+        # protocol, but SynthSeg's native pre-pool grid is 128^3 (33-channel
+        # posteriors) which is not tractable to flatten for the exact-linear
+        # channel (~69M-dim). This lets those scripts request a coarser-than-
+        # native-but-much-finer-than-[4,4,4] grid without touching the shared
+        # config file every other encoder/disease run depends on.
+        grid = tuple(int(v) for v in pooled_grid_override)
     if layer is None:
         layer = int(config["features"].get("layers", {}).get(name, -1))
+    if native_tokens and name != "mass":
+        raise ValueError(f"native_tokens=True is only wired up for MASS so far, got {name!r}")
     if name == "medsiglip":
         return MedSigLIPExtractor(checkpoints[name], device, data, grid, layer)
     if name == "braingemma3d":
         return BrainGemma3DExtractor(checkpoints[name], repositories[name], device, data, grid, layer)
     if name == "mass":
-        return MASSExtractor(checkpoints[name], repositories[name], device, data, grid, layer)
+        return MASSExtractor(checkpoints[name], repositories[name], device, data, grid, layer, native_tokens)
     if name == "brainiac":
         return BrainIACExtractor(checkpoints[name], device, data, grid, layer)
     if name == "anatcl":
@@ -549,5 +605,5 @@ def build_extractor(name: str, config: dict[str, Any], device: str,
         if layer != -1:
             raise ValueError("synthseg has no intermediate layers; use layer -1")
         adapter_hidden_size = int(config.get("finetune", {}).get("synthseg_adapter_hidden_size", 4096))
-        return SynthSegExtractor(checkpoints[name], device, data, grid, adapter_hidden_size)
+        return SynthSegExtractor(checkpoints[name], device, data, grid, adapter_hidden_size, pooled_cache)
     raise ValueError(f"Unknown encoder {name!r}")

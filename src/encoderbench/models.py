@@ -37,14 +37,15 @@ def fixed_3d_position_encoding(grid: Sequence[int], width: int) -> torch.Tensor:
 class AttentionPoolHead(nn.Module):
     """Train-only standardization, learned token attention, and binary head."""
 
-    def __init__(self, width: int, mean: torch.Tensor, std: torch.Tensor, hidden: int = 128):
+    def __init__(self, width: int, mean: torch.Tensor, std: torch.Tensor, hidden: int = 128,
+                num_classes: int = 2):
         super().__init__()
         if mean.shape != (width,) or std.shape != (width,):
             raise ValueError("Normalization statistics must have shape [width]")
         self.register_buffer("mean", mean.float())
         self.register_buffer("std", std.float().clamp_min(1e-6))
         self.attention = nn.Sequential(nn.Linear(width, hidden), nn.Tanh(), nn.Linear(hidden, 1))
-        self.classifier = nn.Linear(width, 2)
+        self.classifier = nn.Linear(width, num_classes)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         normalized = (tokens.float() - self.mean) / self.std

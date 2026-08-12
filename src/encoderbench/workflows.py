@@ -100,11 +100,12 @@ def smoke_extractor(manifest_path: str | Path, disease: str, encoder: str,
 
 def cache_features(manifest_path: str | Path, disease: str, encoder: str,
                    config: dict[str, Any], output_path: str | Path,
-                   device: str = "auto", layer: int | None = None) -> Path:
+                   device: str = "auto", layer: int | None = None,
+                   native_tokens: bool = False) -> Path:
     from encoderbench.extractors import build_extractor
 
     rows = read_manifest(manifest_path)
-    extractor = build_extractor(encoder, config, resolve_device(device), layer)
+    extractor = build_extractor(encoder, config, resolve_device(device), layer, native_tokens)
     features, audits = [], []
     native_grids: set[tuple[int, int, int]] = set()
     for position, row in enumerate(rows):

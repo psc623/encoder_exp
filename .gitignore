@@ -14,3 +14,8 @@ pyenv312/
 data/
 --seeds
 logs/
+report/
+plan_v2.md
+plan_detail.md
+RESULTS.md
+README.md
